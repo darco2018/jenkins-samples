@@ -1,0 +1,262 @@
+parallel step only in Scripted
+------------------------------
+
+While Groovy supports declaring a string with either single quotes, or double quotes, for example:
+
+def singlyQuoted = 'Hello'
+def doublyQuoted = "World"
+Only the latter string will support the dollar-sign ($) based string interpolation, for example:
+
+def username = 'Jenkins'
+echo 'Hello Mr. ${username}' >>>>> Hello Mr. ${username}
+echo "I said, Hello Mr. ${username}" >>>>> I said, Hello Mr. Jenkins
+------------------------
+
+Optional step arguments
+Pipeline follows the Groovy language convention of allowing parentheses to be omitted around method arguments.
+
+Many Pipeline steps also use the named-parameter syntax as a shorthand for creating a Map in Groovy, which uses the syntax [key1: value1, key2: value2]. Making statements like the following functionally equivalent:
+
+git url: 'git://example.com/amazing-project.git', branch: 'master'
+git([url: 'git://example.com/amazing-project.git', branch: 'master'])
+For convenience, when calling steps taking only one parameter (or only one mandatory parameter), the parameter name may be omitted, for example:
+
+sh 'echo hello' /* short form  */
+sh([script: 'echo hello'])  /* long form */
+
+-----------------------
+
+Jenkins Pipeline exposes environment variables via the global variable env, which is available from 
+anywhere within a Jenkinsfile. The full list of environment variables accessible 
+from within Jenkins Pipeline is documented at localhost:8080/pipeline-syntax/globals#env
+
+echo "Running ${env.BUILD_ID} on ${env.JENKINS_URL}"
+
+----------------------------
+
+Setting an environment variable within a Jenkins Pipeline is accomplished differently 
+depending on whether Declarative or Scripted Pipeline is used.
+Declarative Pipeline supports an environment directive, whereas users of 
+Scripted Pipeline must use the withEnv step.
+
+pipeline {
+    agent any
+    environment { 
+        CC = 'clang'
+    }
+    stages {
+        stage('Example') {
+            environment { 
+                DEBUG_FLAGS = '-g'
+            }
+            steps {
+                sh 'printenv'
+            }
+        }
+    }
+}
+--------------------------
+
+In the case where environment variable need to be set dynamically at run time 
+this can be done with the use of a shell scripts (sh), Windows Batch Script (bat) or PowerShell Script (powershell). 
+Each script can either returnStatus or returnStdout.
+
+pipeline {
+    agent any 
+    environment {
+        // Using returnStdout W
+        // when using returnStdout a trailing whitespace will be append to the returned string. Use .trim() to remove this.
+        CC = """${sh(
+                returnStdout: true,
+                script: 'echo "clang"'
+            )}""" 
+        // Using returnStatus
+        EXIT_STATUS = """${sh(
+                returnStatus: true,
+                script: 'exit 1'
+            )}"""
+    }
+    stages {
+        stage('Example') {
+            environment {
+                DEBUG_FLAGS = '-g'
+            }
+            steps {
+                sh 'printenv'
+            }
+        }
+    }
+}
+
+-----------------------------
+
+The following Pipeline code shows an example of how to create a Pipeline using environment variables for secret text credentials.
+
+In this example, two secret text credentials are assigned to separate environment variables to access Amazon Web Services (AWS). These credentials would have been configured in Jenkins with their respective credential IDs
+jenkins-aws-secret-key-id and jenkins-aws-secret-access-key.
+
+Jenkinsfile (Declarative Pipeline)
+pipeline {
+    agent {
+        // Define agent details here
+    }
+    environment {
+        AWS_ACCESS_KEY_ID     = credentials('jenkins-aws-secret-key-id')
+        AWS_SECRET_ACCESS_KEY = credentials('jenkins-aws-secret-access-key')
+    }
+    
+ ---------------------------
+ 
+ The following Pipeline code snippets show an example of how to create a Pipeline using 
+ environment variables for username and password credentials.
+ 
+ environment {
+    BITBUCKET_COMMON_CREDS = credentials('jenkins-bitbucket-common-creds')
+}
+
+this actually sets the following three environment variables:
+
+BITBUCKET_COMMON_CREDS - contains a username and a password separated by a colon in the format username:password.
+
+BITBUCKET_COMMON_CREDS_USR - an additional variable containing the username component only.
+
+BITBUCKET_COMMON_CREDS_PSW - an additional variable containing the password component only.
+
+The following credential environment variables (defined in this Pipeline’s environment directive) are available within this stage’s steps and can be referenced using the syntax:
+$BITBUCKET_COMMON_CREDS
+
+$BITBUCKET_COMMON_CREDS_USR
+
+$BITBUCKET_COMMON_CREDS_PSW
+
+As far as Pipelines are concerned, secret files are handled in exactly the same manner as secret text (above).
+
+Essentially, the only difference between secret text and secret file credentials 
+are that for secret text, the credential itself is entered directly into Jenkins whereas for a secret file, 
+the credential is originally stored in a file which is then uploaded to Jenkins.
+
+If you need to set credentials in a Pipeline for anything other than secret text, usernames and passwords, or secret files (above) - i.e SSH keys or certificates, then 
+use Jenkins' Snippet Generator feature, which you can access through Jenkins' classic UI.
+
+he following code snippet shows an example Pipeline in its entirety, which implements the SSH User Private Key and Certificate snippets above:
+
+Jenkinsfile (Declarative Pipeline)
+pipeline {
+    agent {
+        // define agent details
+    }
+    stages {
+        stage('Example stage 1') {
+            steps {
+                withCredentials(bindings: [sshUserPrivateKey(credentialsId: 'jenkins-ssh-key-for-abc', \
+                                                             keyFileVariable: 'SSH_KEY_FOR_ABC')]) {
+                  // 
+                }
+                withCredentials(bindings: [certificate(credentialsId: 'jenkins-certificate-for-xyz', \
+                                                       keystoreVariable: 'CERTIFICATE_FOR_XYZ', \
+                                                       passwordVariable: 'XYZ-CERTIFICATE-PASSWORD')]) {
+                  // 
+                }
+            }
+        }
+        
+        
+        
+The use of single-quotes instead of double-quotes to define the script (the implicit parameter to sh) in Groovy above. 
+The single-quotes will cause the secret to be expanded by the shell as an environment variable. 
+The double-quotes are potentially less secure as the secret is interpolated by Groovy, and so
+typical operating system process listings (as well as Blue Ocean, and the pipeline steps tree 
+in the classic UI) will accidentally disclose it :
+
+node {
+  withCredentials([string(credentialsId: 'mytoken', variable: 'TOKEN')]) {
+    sh /* WRONG! */ """
+      set +x
+      curl -H 'Token: $TOKEN' https://some.api/
+    """
+    sh /* CORRECT */ '''
+      set +x
+      curl -H 'Token: $TOKEN' https://some.api/
+    '''
+  }
+}
+
+--------------------------
+
+
+ Handling parameters
+Declarative Pipeline supports parameters out-of-the-box, allowing the Pipeline to accept user-specified parameters at runtime via the parameters directive. Configuring parameters with Scripted Pipeline is done with the properties step, which can be found in the Snippet Generator.
+
+If you configured your pipeline to accept parameters using the Build with Parameters option, those parameters are accessible as members of the params variable.
+
+Assuming that a String parameter named "Greeting" has been configuring in the Jenkinsfile, it can access that parameter via ${params.Greeting}:
+
+Jenkinsfile (Declarative Pipeline)
+pipeline {
+    agent any
+    parameters {
+        string(name: 'Greeting', defaultValue: 'Hello', description: 'How should I greet the world?')
+    }
+    stages {
+        stage('Example') {
+            steps {
+                echo "${params.Greeting} World!"
+            }
+        }
+    }
+}
+
+-----------------------
+
+Using multiple agents
+
+    agent none
+    stages {
+        stage('Build') {
+            agent any
+            steps {
+                checkout scm
+                sh 'make'
+                stash includes: '**/target/*.jar', name: 'app' 
+                // he stash step allows capturing files matching an inclusion pattern (**/target/*.jar) for reuse within the same Pipeline. 
+                //Once the Pipeline has completed its execution, stashed files are deleted 
+            }
+        }
+        stage('Test on Linux') {
+            agent { 
+                label 'linux'
+                // Execute the Pipeline, or stage, on an agent available in the Jenkins environment with the provided label
+            }
+            steps {
+                unstash 'app' 
+                sh 'make check'
+            }
+            post {
+                always {
+                    junit '**/target/*.xml'
+                }
+            }
+        }
+        stage('Test on Windows') {
+            agent {
+                label 'windows'
+            }
+            steps {
+                unstash 'app'
+                // unstash will retrieve the named "stash" from the Jenkins master into the Pipeline’s current workspace.
+                // This option is valid for node, docker and dockerfile, and is required for node.
+                bat 'make check' 
+            }
+            post {
+                always {
+                    junit '**/target/*.xml'
+                }
+            }
+        }
+    }
+}
+ 
+ 
+
+
+
