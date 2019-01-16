@@ -51,6 +51,18 @@ pipeline {
     }
 }
 
+pipeline {
+    agent any
+
+    stages {
+        stage('Build') {
+            steps {
+                sh 'make' 
+                archiveArtifacts artifacts: '**/target/*.jar', fingerprint: true 
+            }
+        }
+    }
+}
 
 pipeline {
     agent any
@@ -146,6 +158,24 @@ pipeline {
         }
     }
 }
+
+
+pipeline {
+    agent any
+
+    stages {
+        stage('Test') {
+            steps {
+                /* `make check` returns non-zero on test failures,
+                * using `true` to allow the Pipeline to continue nonetheless
+                */
+                sh 'make check || true' 
+                junit '**/target/*.xml' 
+            }
+        }
+    }
+}
+
 
 pipeline {
     agent any
@@ -244,6 +274,24 @@ node {
         // And a final echo to show the time when we wrap up.
         stage "Second echo"
         echo "Wonder what time it is now?"
+    }
+}
+
+
+pipeline {
+    agent any
+
+    stages {
+        stage('Deploy') {
+            when {
+              expression {
+                currentBuild.result == null || currentBuild.result == 'SUCCESS' 
+              }
+            }
+            steps {
+                sh 'make publish'
+            }
+        }
     }
 }
 
