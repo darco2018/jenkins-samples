@@ -176,6 +176,76 @@ pipeline {
     }
 }
 
+// This shows a simple example of how to archive the build output artifacts.
+node {
+    stage "Create build output"
+    
+    // Make the output directory.
+    sh "mkdir -p output"
+
+    // Write an useful file, which is needed to be archived.
+    writeFile file: "output/usefulfile.txt", text: "This file is useful, need to archive it."
+
+    // Write an useless file, which is not needed to be archived.
+    writeFile file: "output/uselessfile.md", text: "This file is useless, no need to archive it."
+
+    stage "Archive build output"
+    
+    // Archive the build output artifacts.
+    archiveArtifacts artifacts: 'output/*.txt', excludes: 'output/*.md'
+}
+
+This is a simple demonstration of how to run a Maven build, that resolves dependencies, upload artifacts and publish build info to Artifactory. 
+Read the full documentation https://www.jfrog.com/confluence/display/RTF/Working+With+Pipeline+Jobs+in+Jenkins
+
+node {
+    // Get Artifactory server instance, defined in the Artifactory Plugin administration page.
+    def server = Artifactory.server "SERVER_ID"
+    // Create an Artifactory Maven instance.
+    def rtMaven = Artifactory.newMavenBuild()
+    def buildInfo
+
+    stage('Clone sources') {
+        git url: 'https://github.com/jfrogdev/project-examples.git'
+    }
+
+    stage('Artifactory configuration') {
+        // Tool name from Jenkins configuration
+        rtMaven.tool = "Maven-3.3.9"
+        // Set Artifactory repositories for dependencies resolution and artifacts deployment.
+        rtMaven.deployer releaseRepo:'libs-release-local', snapshotRepo:'libs-snapshot-local', server: server
+        rtMaven.resolver releaseRepo:'libs-release', snapshotRepo:'libs-snapshot', server: server
+    }
+
+    stage('Maven build') {
+        buildInfo = rtMaven.run pom: 'maven-example/pom.xml', goals: 'clean install'
+    }
+
+    stage('Publish build info') {
+        server.publishBuildInfo buildInfo
+    }
+}
+
+
+This shows usage of a simple build wrapper, specifically the Timestamper plugin, which adds timestamps to the console output.
+
+// This shows a simple build wrapper example, using the Timestamper plugin.
+node {
+    // Adds timestamps to the output logged by steps inside the wrapper.
+    timestamps {
+        // Just some echoes to show the timestamps.
+        stage "First echo"
+        echo "Hey, look, I'm echoing with a timestamp!"
+
+        // A sleep to make sure we actually get a real difference!
+        stage "Sleeping"
+        sleep 30
+
+        // And a final echo to show the time when we wrap up.
+        stage "Second echo"
+        echo "Wonder what time it is now?"
+    }
+}
 
 
 
